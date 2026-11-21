@@ -1,0 +1,36 @@
+# Ancorhash on-chain contracts.
+#
+# Compiler settings are pinned on purpose. The registry is deployed through
+# CREATE2, and identical bytecode is what gives it the same address on every
+# chain: changing any of these values changes the address of the next deploy.
+
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "test"
+script = "script"
+solc_version = "0.8.28"
+# Remappings are part of the compiler input, hence of the bytecode. They come
+# only from remappings.txt: a stray library in lib/ must not change the address.
+auto_detect_remappings = false
+# No Cancun-only opcodes (MCOPY, TSTORE) in the bytecode, so the same build
+# deploys on every EVM chain we may pick.
+evm_version = "shanghai"
+optimizer = true
+optimizer_runs = 10000
+
+[fuzz]
+runs = 1000
+
+[invariant]
+runs = 256
+depth = 64
+# The handler only sends valid input: any revert during a run is a bug.
+fail_on_revert = true
+
+[profile.ci.fuzz]
+runs = 10000
+
+[profile.ci.invariant]
+runs = 1000

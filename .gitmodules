@@ -1,0 +1,3 @@
+[submodule "src/Ancorhash.Contracts/lib/forge-std"]
+	path = src/Ancorhash.Contracts/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
