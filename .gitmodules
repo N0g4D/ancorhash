@@ -1,3 +1,6 @@
 [submodule "src/Ancorhash.Contracts/lib/forge-std"]
 	path = src/Ancorhash.Contracts/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
+[submodule "src/Ancorhash.Contracts/lib/openzeppelin-contracts"]
+	path = src/Ancorhash.Contracts/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts

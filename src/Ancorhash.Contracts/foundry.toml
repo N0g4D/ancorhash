@@ -14,9 +14,9 @@ solc_version = "0.8.28"
 # Remappings are part of the compiler input, hence of the bytecode. They come
 # only from remappings.txt: a stray library in lib/ must not change the address.
 auto_detect_remappings = false
-# No Cancun-only opcodes (MCOPY, TSTORE) in the bytecode, so the same build
-# deploys on every EVM chain we may pick.
-evm_version = "shanghai"
+# Cancun: OpenZeppelin's SignatureChecker uses MCOPY. Check that a chain has
+# activated the Cancun opcodes before deploying there.
+evm_version = "cancun"
 optimizer = true
 optimizer_runs = 10000
 
