@@ -4,4 +4,7 @@
     <Project Path="src/Ancorhash.Core/Ancorhash.Core.csproj" />
     <Project Path="src/Ancorhash.Infrastructure/Ancorhash.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ancorhash.Tests/Ancorhash.Tests.csproj" />
+  </Folder>
 </Solution>

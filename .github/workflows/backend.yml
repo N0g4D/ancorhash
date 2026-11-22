@@ -1,0 +1,39 @@
+name: backend
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "Ancorhash.slnx"
+      - ".github/workflows/backend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet:
+    runs-on: ubuntu-latest
+    steps:
+      # The integration tests deploy the registry with forge script, which needs
+      # the contract libraries in src/Ancorhash.Contracts/lib.
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      # Without anvil and forge on the PATH the integration tests would be
+      # skipped, not failed: fail here instead.
+      - name: Check Foundry
+        run: anvil --version && forge --version
+
+      - name: Build
+        run: dotnet build Ancorhash.slnx
+
+      - name: Test
+        run: dotnet test Ancorhash.slnx --no-build
