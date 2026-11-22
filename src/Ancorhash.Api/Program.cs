@@ -38,7 +38,7 @@ if (!string.IsNullOrWhiteSpace(keyVaultUri))
 builder.Services.AddOpenTelemetry()
     .UseFunctionsWorkerDefaults()
     .WithLogging(logging => logging.AddConsoleExporter());
-    // .UseAzureMonitorExporter();
+// .UseAzureMonitorExporter();
 
 builder.Services.AddMemoryCache();
 
