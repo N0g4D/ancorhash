@@ -12,25 +12,18 @@ const TURNSTILE_SITEKEY = import.meta.env.VITE_TURNSTILE_SITEKEY as
   | string
   | undefined
 
-/**
- * Block explorer per chain id: il backend espone solo chain_id e nome,
- * il link di verifica è una responsabilità di presentazione del frontend.
- * Chain senza explorer noto → si mostra il solo tx_hash, senza link.
- */
-const EXPLORER_TX_URLS: Record<number, string> = {
-  11155111: 'https://sepolia.etherscan.io/tx/',
-  80002: 'https://amoy.polygonscan.com/tx/',
-  1: 'https://etherscan.io/tx/',
-  137: 'https://polygonscan.com/tx/',
-}
-
-/** Wallet mock del PoC (checksummato EIP-55, richiesto dal backend). */
-const MOCK_WALLET_ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-
 /** Ricarico fisso di servizio applicato sopra il costo di rete (USD). */
 const SERVICE_FEE_USD = 1.48
 /** Durata della simulazione di pagamento (checkout mock per le demo B2B). */
 const PAYMENT_SIMULATION_MS = 2000
+
+/** Orario di ancoraggio (ISO 8601 UTC dal backend) nel fuso locale. */
+function formatAnchoredAt(isoUtc: string): string {
+  return new Date(isoUtc).toLocaleString('it-IT', {
+    dateStyle: 'long',
+    timeStyle: 'medium',
+  })
+}
 
 /** Importo in USD a due decimali; sotto il centesimo mostra "<$0.01". */
 function formatUsd(amount: number): string {
@@ -218,7 +211,6 @@ function App() {
       const result = await notarize({
         document_id: fileName,
         document_hash: hash,
-        wallet_address: MOCK_WALLET_ADDRESS,
         chain_id: selectedChainId,
         turnstile_token: turnstileToken ?? '',
       })
@@ -603,17 +595,39 @@ function App() {
                 strokeLinejoin="round"
                 aria-hidden="true"
               >
-                <path d="M20 6 9 17l-5-5" />
+                {phase.result.status === 'pending' ? (
+                  <>
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </>
+                ) : (
+                  <path d="M20 6 9 17l-5-5" />
+                )}
               </svg>
-              <h3 className="text-sm font-semibold">Transazione confermata</h3>
+              <h3 className="text-sm font-semibold">
+                {phase.result.status === 'pending'
+                  ? 'Transazione inviata'
+                  : phase.result.already_anchored
+                    ? 'Documento già ancorato'
+                    : 'Transazione confermata'}
+              </h3>
             </div>
-            <p className="mt-2 break-all font-mono text-xs text-neutral-500">
-              {phase.result.tx_hash}
+            <p className="mt-2 text-sm text-neutral-600">
+              {phase.result.anchored_at === null
+                ? 'In attesa di conferma dalla rete. Tra qualche minuto notarizza di nuovo lo stesso file per leggere l’orario di ancoraggio: il registro non crea duplicati.'
+                : `Ancorato il ${formatAnchoredAt(phase.result.anchored_at)}.`}
+              {phase.result.already_anchored &&
+                ' Nessuna nuova transazione: vale la registrazione originale.'}
             </p>
+            {phase.result.tx_hash && (
+              <p className="mt-2 break-all font-mono text-xs text-neutral-500">
+                {phase.result.tx_hash}
+              </p>
+            )}
             <div className="mt-4 flex items-center gap-5 text-sm">
-              {EXPLORER_TX_URLS[phase.result.chain_id] && (
+              {phase.result.explorer_url && (
                 <a
-                  href={`${EXPLORER_TX_URLS[phase.result.chain_id]}${phase.result.tx_hash}`}
+                  href={phase.result.explorer_url}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-medium text-neutral-900 underline underline-offset-2 hover:text-neutral-600"

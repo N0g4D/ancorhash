@@ -62,9 +62,10 @@ sequenceDiagram
     B->>B: Displays Checkout Mock (Gas Cost + Service Fee)
     B->>A: POST /api/v1/notarize (Hash, Turnstile Token, ChainId)
     A->>A: Validate Anti-bot & IP Rate Limit
-    A->>R: Broadcast EIP-1559 Transaction (Data = Hash)
-    R-->>A: Transaction Hash
-    A-->>B: Success Response + Etherscan Link
+    A->>R: anchoredAt(digest, relayer) on AncorhashRegistry
+    A->>R: anchorBatch(new digests), EIP-1559 (skipped if already anchored)
+    R-->>A: Receipt with Anchored events
+    A-->>B: Receipt: anchored_at, tx_hash, explorer_url
 ~~~
 
 ---
@@ -99,7 +100,7 @@ Navigate to the API project and restore dependencies:
 cd src/Ancorhash.Api
 dotnet restore
 ~~~
-Create a `local.settings.json` file. Ensure you configure a valid Relayer Private Key (with funds on the selected networks) and standard RPC URLs:
+Create a `local.settings.json` file. Ensure you configure a valid Relayer Private Key (with funds on the selected networks), standard RPC URLs and the address of `AncorhashRegistry`. The registry has the same address on every chain: `script/DeployRegistry.s.sol` prints it (see `src/Ancorhash.Contracts/README.md`), and the API refuses to start without a checksummed address:
 ~~~json
 {
   "IsEncrypted": false,
@@ -108,10 +109,12 @@ Create a `local.settings.json` file. Ensure you configure a valid Relayer Privat
     "Logging__LogLevel__Default": "Information",
     "Evm__RelayerPrivateKey": "0xYOUR_PRIVATE_KEY",
     "Turnstile__SecretKey": "1x0000000000000000000000000000000AA",
+    "Blockchain__RegistryAddress": "0xYOUR_REGISTRY_ADDRESS",
     "Blockchain__Networks__11155111__RpcUrl": "https://sepolia.infura.io/v3/...",
     "Blockchain__Networks__11155111__Name": "Ethereum Sepolia",
     "Blockchain__Networks__11155111__NativeCoinId": "ethereum",
-    "Blockchain__Networks__11155111__IsTestnet": "true"
+    "Blockchain__Networks__11155111__IsTestnet": "true",
+    "Blockchain__Networks__11155111__ExplorerUrl": "https://sepolia.etherscan.io"
   },
   "Host": {
     "CORS": "http://localhost:5173",
@@ -139,6 +142,43 @@ Start the Vite development server:
 npm run dev
 ~~~
 Open `http://localhost:5173` in your browser.
+
+### 3. Tests
+~~~bash
+dotnet test Ancorhash.slnx
+~~~
+The integration tests start `anvil` on a free port and deploy the registry with `forge script`. They are marked `Category=Integration` and skipped when `anvil` or `forge` is not on the `PATH`; `dotnet test --filter "Category!=Integration"` leaves them out explicitly.
+
+---
+
+## Notarization API
+
+Both endpoints take digests computed by the client: 32 bytes, as 64 hex characters (with or without `0x`, any case) or as Base64, which is what Power Automate Desktop's *Hash from file* returns. The zero digest is rejected.
+
+- `POST /api/v1/notarize`: `document_id`, `document_hash`, `chain_id`.
+- `POST /api/v1/notarize/batch`: `items` (1 to 100 of `{document_id, document_hash}`) and `chain_id`, anchored with one transaction. The response holds one entry per item, in the same order.
+
+Each entry is a self-contained receipt:
+
+~~~json
+{
+  "status": "success",
+  "document_id": "invoice-42.pdf",
+  "digest": "0x10fd2bb778aa0c869b203add42a3bec07e74e428153388b80db340a9df4744d1",
+  "chain_id": 11155111,
+  "registry": "0x…",
+  "anchorer": "0x…",
+  "anchored_at": "2026-11-22T10:15:30Z",
+  "anchored_at_unix": 1795342530,
+  "tx_hash": "0x…",
+  "already_anchored": false,
+  "explorer_url": "https://sepolia.etherscan.io/tx/0x…"
+}
+~~~
+
+Anchoring is idempotent. A digest the relayer has already anchored returns HTTP 200 with the original `anchored_at`, `tx_hash: null` and `already_anchored: true`, and costs no transaction, so retrying a request is always safe. When the transaction is sent but its receipt does not arrive within `Blockchain:ReceiptTimeoutSeconds` (90 by default), the response is HTTP 202 with `status: "pending"`, the `tx_hash` and `anchored_at: null`. Sending the same request again once that transaction is mined returns the time. A retry while it is still pending returns HTTP 202 with the same `tx_hash` and sends nothing: each instance remembers its pending transactions for 10 minutes, so a transaction dropped from the mempool does not block the digest for longer. With several instances, a retry can at worst send one more transaction, which anchors nothing new. An invalid digest is HTTP 400.
+
+Anyone can verify a receipt without trusting Ancorhash: `anchoredAt(digest, anchorer)` on the registry returns `anchored_at_unix`.
 
 ---
 

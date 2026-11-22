@@ -6,18 +6,31 @@ const API_BASE_URL =
 
 export interface NotarizeRequest {
   document_id: string
+  /** SHA-256 del file: 64 caratteri hex (con o senza 0x) oppure Base64. */
   document_hash: string
-  wallet_address: string
   chain_id: number
   turnstile_token: string
 }
 
+/**
+ * Ricevuta di ancoraggio su AncorhashRegistry: 200 se il record è on-chain
+ * (ancorato ora o già prima), 202 se la transazione attende ancora conferma.
+ */
 export interface NotarizeResponse {
-  status: string
+  status: 'success' | 'pending'
   document_id: string
-  doc_hash: string
-  tx_hash: string
+  /** Digest canonico: hex minuscolo con prefisso 0x. */
+  digest: string
   chain_id: number
+  registry: string
+  anchorer: string
+  /** Orario del primo ancoraggio, ISO 8601 UTC; null finché è pending. */
+  anchored_at: string | null
+  anchored_at_unix: number | null
+  /** Null se il documento era già ancorato: vale il record originale. */
+  tx_hash: string | null
+  already_anchored: boolean
+  explorer_url: string | null
 }
 
 export interface ExtractResponse {

@@ -9,6 +9,7 @@ using Azure.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Ancorhash.Infrastructure;
 
@@ -32,14 +33,10 @@ public static class DependencyInjection
             .PostConfigure(options => options.RelayerPrivateKey =
                 configuration[BlockchainOptions.RelayerPrivateKeyConfigKey] ?? string.Empty)
             .ValidateDataAnnotations()
-            .Validate(
-                options => options.Networks.Count > 0,
-                "Almeno un network EVM deve essere configurato in Blockchain:Networks.")
-            .Validate(
-                options => options.Networks.Values
-                    .All(n => Uri.IsWellFormedUriString(n.RpcUrl, UriKind.Absolute)),
-                "Ogni network in Blockchain:Networks deve avere un RpcUrl assoluto valido.")
             .ValidateOnStart();
+        // Network, RPC URL, indirizzi del registry (checksum EIP-55) ed explorer.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<BlockchainOptions>, BlockchainOptionsValidator>());
 
         services.AddOptions<DocumentIntelligenceOptions>()
             .Bind(configuration.GetSection(DocumentIntelligenceOptions.SectionName))
@@ -68,7 +65,9 @@ public static class DependencyInjection
         services.AddSingleton<IPriceOracleService, CoinGeckoPriceOracleService>();
 
         services.AddSingleton<IWeb3Factory, NethereumWeb3Factory>();
-        services.AddSingleton<IWalletAddressValidator, NethereumWalletAddressValidator>();
+        services.TryAddSingleton(TimeProvider.System);
+        // Singleton: le transazioni pending valgono per tutta l'istanza.
+        services.AddSingleton<PendingAnchorings>();
         services.AddSingleton<IBlockchainRelayer, NethereumBlockchainRelayer>();
         services.AddSingleton<IDocumentExtractionService, AzureDocumentExtractionService>();
         return services;
