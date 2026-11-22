@@ -61,3 +61,7 @@ build/
 # ── AI Agent meta-prompts (non esporre) ──────────────────────────────
 .prompts/
 prompts/
+
+# Local secrets
+key.txt
+*.key
