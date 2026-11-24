@@ -66,8 +66,20 @@ public sealed class PendingAnchoringTests(AnvilFixture anvil)
     {
         SkipWithoutAnvil();
         var clock = new ManualTimeProvider();
-        var pendingAnchorings = new PendingAnchorings(clock);
-        var relayer = anvil.CreateRelayer(receiptTimeoutSeconds: 1, pendingAnchorings: pendingAnchorings);
+
+        // Un solo relayer per tutto il test, perché conta anche il nonce dopo lo scarto:
+        // deve rileggerlo dal nodo lo stesso relayer che ha mandato la transazione,
+        // invece di usare un contatore tenuto in memoria, nel relayer o nel suo account.
+        // Un relayer nuovo partirebbe comunque dal nonce del nodo, e un contatore del
+        // genere passerebbe inosservato. Il timeout della receipt è di 3 secondi: il
+        // primo invio aspetta comunque tutto il timeout e torna pending, perché anvil
+        // non mina, quindi un timeout più lungo allungherebbe solo il test. Nell'ultimo
+        // invio, con l'automine, anvil mina il blocco in modo asincrono e la prima
+        // lettura della receipt può arrivare prima del blocco e tornare null; con 3
+        // secondi le letture sono tre, a 0, 1 e 2 secondi, e il ritardo del blocco non
+        // basta più a lasciare il digest pending. Con 1 secondo la lettura sarebbe una
+        // sola: il timeout annullerebbe l'attesa prima della seconda.
+        var relayer = anvil.CreateRelayer(receiptTimeoutSeconds: 3, pendingAnchorings: new PendingAnchorings(clock));
         var digest = RandomDigest();
         var nonceBefore = await anvil.GetNonceAsync(anvil.RelayerAddress);
 
@@ -95,16 +107,7 @@ public sealed class PendingAnchoringTests(AnvilFixture anvil)
         // per sempre. Con stessi dati e stesse fee la firma, deterministica, può
         // anche ridare lo stesso hash.
         clock.Advance(TimeSpan.FromMinutes(1));
-
-        // L'invio passa da un secondo relayer con il timeout predefinito. Con
-        // l'automine anvil mina il blocco in modo asincrono, quindi su un runner
-        // lento la prima lettura della receipt può arrivare prima del blocco e
-        // tornare null; con il timeout di 1 secondo, l'attesa di 1 secondo prima
-        // della lettura successiva verrebbe annullata e il digest tornerebbe
-        // pending. Il secondo relayer condivide la stessa istanza di
-        // PendingAnchorings, quindi lo stesso orologio e la voce appena scaduta.
-        var patientRelayer = anvil.CreateRelayer(pendingAnchorings: pendingAnchorings);
-        var retried = Assert.Single((await patientRelayer.AnchorAsync(ChainId, [digest], Ct)).Results);
+        var retried = Assert.Single((await relayer.AnchorAsync(ChainId, [digest], Ct)).Results);
 
         Assert.False(retried.IsPending);
         Assert.False(retried.AlreadyAnchored);
