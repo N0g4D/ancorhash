@@ -111,6 +111,24 @@ Measured on a local chain, full transaction cost:
 | `anchorBatchBySig`, 100 new digests | 25,349 per digest |
 | For reference: hash in the calldata of a plain transaction (previous approach) | ~21,500 |
 
+#### On Sepolia, under Glamsterdam
+
+Sepolia activated Glamsterdam on 6 October 2026. With EIP-8037, state creation
+is charged on its own: 1,530 gas per byte of new state, and a new storage slot
+counts as 64 bytes. Every newly anchored digest therefore pays 97,920 gas for
+its slot, on top of execution. Measured on Sepolia on 23 November 2026:
+
+| Operation | Gas used | Per digest |
+|---|---|---|
+| `anchor`, a new digest ([tx](https://sepolia.etherscan.io/tx/0x76b600699b67980a1d1b26dda6ebacae8605ca0963cce7afa7ad49bbf99e4296)) | 128,238 | 128,238 |
+| `anchorBatch`, 10 new digests ([tx](https://sepolia.etherscan.io/tx/0x5a07fd5838082a0c087d9083953e32bdbc64140fcea742092a2e9cbe85414895)) | 1,146,412 | 114,641 |
+
+Under these rules a batch shares only the fixed cost of the transaction: the
+slot is paid for every digest. To anchor many outputs at once, anchor the root
+of a Merkle tree of their digests, which takes a single slot whatever the size
+of the batch. Glamsterdam is not on mainnet yet, and the anvil figures above
+use the storage pricing that mainnet still has.
+
 ### Deploying
 
 The script deploys through the deterministic CREATE2 deployer
@@ -132,9 +150,44 @@ and move the address.
 cast wallet import ancorhash-deployer --interactive
 
 forge script script/DeployRegistry.s.sol \
-  --rpc-url <rpc-url> --account ancorhash-deployer --broadcast
+  --rpc-url <rpc-url> --account ancorhash-deployer \
+  --broadcast --skip-simulation
 # add --verify and an explorer API key to publish the source
 ```
+
+`--skip-simulation` lets the node estimate the gas. Without it, forge simulates
+the deployment on its local EVM, which predates EIP-8037, and sends too little
+gas: on Sepolia the deployment takes about 6.4 million gas, because deployed
+code costs 1,530 gas per byte there.
+
+If `--verify` fails or stays pending, verify by hand: print the compiler input
+with `forge verify-contract <address> AncorhashRegistry --show-standard-json-input > standard-input.json`,
+then upload it in the explorer's form as Solidity (Standard-Json-Input),
+compiler `v0.8.28+commit.7893614a`, licence Apache-2.0.
+
+### Deployments
+
+| Network | Address | Deployed in |
+|---|---|---|
+| Ethereum Sepolia (chain id 11155111) | [`0x929673BD5629c84453aA1d2d733aA31836E62fCE`](https://sepolia.etherscan.io/address/0x929673BD5629c84453aA1d2d733aA31836E62fCE#code) | block 12187372 ([tx](https://sepolia.etherscan.io/tx/0xd94fbbddf3e5db636a8a99458a686d3c0f81291e029d1e2111142a21e54c57a2)) |
+
+The source is verified on Etherscan (exact match).
+
+### Compiler version
+
+The registry is compiled with solc 0.8.28, pinned because the CREATE2 address
+depends on the exact bytecode, metadata included. Etherscan lists the known
+bugs of 0.8.28 next to the verified source. None of them reaches this
+contract: with the same settings, solc 0.8.39, released on 19 November 2026
+with no known bugs at the time of writing, produces byte-for-byte the same
+creation and runtime code. Only the CBOR metadata at the end of the bytecode
+differs.
+
+When new compiler bugs are published, repeat the check: in a scratch copy, set
+the pragma to the newest version and build with `forge build --use <version>`,
+since `foundry.toml` pins 0.8.28. Then compare `bytecode` and
+`deployedBytecode` in the two artifacts without the trailing metadata, whose
+length is in the last two bytes.
 
 ### Development
 
