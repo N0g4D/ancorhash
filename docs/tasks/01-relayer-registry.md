@@ -34,8 +34,12 @@ cast wallet import ancorhash-deployer --interactive
 cd src/Ancorhash.Contracts
 forge script script/DeployRegistry.s.sol \
   --rpc-url "$SEPOLIA_RPC_URL" --account ancorhash-deployer \
-  --broadcast --verify --etherscan-api-key "$ETHERSCAN_API_KEY"
+  --broadcast --skip-simulation \
+  --verify --etherscan-api-key "$ETHERSCAN_API_KEY"
 ```
+
+Done: the registry is at `0x929673BD5629c84453aA1d2d733aA31836E62fCE` on
+Sepolia, block 12187372.
 
 The script prints the address; it goes into `Blockchain:RegistryAddress`.
 
@@ -121,18 +125,9 @@ on its own.
   `Blockchain:Relayer:KeyName`. `Evm:RelayerPrivateKey` stays only for local
   development against anvil: startup must fail if it is set while any network
   has `IsTestnet = false`.
-- Signed anchoring for an organisation, enabled when
-  `Blockchain:Signer:KeyVaultUri` and `Blockchain:Signer:KeyName` are set:
-  1. the anchorer is the address of that key, and it is also the address used
-     for the `anchoredAt` checks;
-  2. deadline = now + 10 minutes;
-  3. sign the EIP-712 typed data
-     `AnchorBatch(bytes32[] digests,address anchorer,uint256 deadline)`, domain
-     `{name: "Ancorhash", version: "1", chainId, verifyingContract: registry}`,
-     with the organisation's signer (`SignTypedDataJsonAsync` or
-     `SignTypedDataAsync`);
-  4. submit `anchorBatchBySig(digests, anchorer, deadline, signature)` with the
-     relayer account, which pays the gas.
+- Signed anchoring for an organisation moves to the task on Merkle roots.
+  There the organisation signs a single root with `anchorBySig`, so no batch
+  signature is needed.
 - Document the Key Vault setup in the README:
   `az keyvault key create --kty EC-HSM --curve SECP256K1 --ops sign verify`
   (`EC` instead of `EC-HSM` on the standard tier), and the "Key Vault Crypto
@@ -174,10 +169,9 @@ them without a key, which works only locally: Core Tools does not check keys.
   - the same digest again returns `already_anchored = true`, and the relayer's
     nonce does not change;
   - a batch with duplicates reports what the contract reports;
-  - a signed batch, with a local key standing in for Key Vault, writes the
-    records under the signer and none under the relayer;
-  - the EIP-712 hash Nethereum computes equals `hashAnchorBatch` from the
-    contract for the same inputs.
+  - the relayer signs through `ExternalAccount` with a local key standing in for
+    Key Vault, anchors a digest on anvil, and the record is under that key's
+    address;
 - `dotnet test` passes without anvil (integration tests skipped) and with it.
 
 ## Done when
