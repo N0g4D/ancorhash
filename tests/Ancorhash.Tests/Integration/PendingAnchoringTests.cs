@@ -66,7 +66,8 @@ public sealed class PendingAnchoringTests(AnvilFixture anvil)
     {
         SkipWithoutAnvil();
         var clock = new ManualTimeProvider();
-        var relayer = anvil.CreateRelayer(receiptTimeoutSeconds: 1, pendingAnchorings: new PendingAnchorings(clock));
+        var pendingAnchorings = new PendingAnchorings(clock);
+        var relayer = anvil.CreateRelayer(receiptTimeoutSeconds: 1, pendingAnchorings: pendingAnchorings);
         var digest = RandomDigest();
         var nonceBefore = await anvil.GetNonceAsync(anvil.RelayerAddress);
 
@@ -94,7 +95,16 @@ public sealed class PendingAnchoringTests(AnvilFixture anvil)
         // per sempre. Con stessi dati e stesse fee la firma, deterministica, può
         // anche ridare lo stesso hash.
         clock.Advance(TimeSpan.FromMinutes(1));
-        var retried = Assert.Single((await relayer.AnchorAsync(ChainId, [digest], Ct)).Results);
+
+        // L'invio passa da un secondo relayer con il timeout predefinito. Con
+        // l'automine anvil mina il blocco in modo asincrono, quindi su un runner
+        // lento la prima lettura della receipt può arrivare prima del blocco e
+        // tornare null; con il timeout di 1 secondo, l'attesa di 1 secondo prima
+        // della lettura successiva verrebbe annullata e il digest tornerebbe
+        // pending. Il secondo relayer condivide la stessa istanza di
+        // PendingAnchorings, quindi lo stesso orologio e la voce appena scaduta.
+        var patientRelayer = anvil.CreateRelayer(pendingAnchorings: pendingAnchorings);
+        var retried = Assert.Single((await patientRelayer.AnchorAsync(ChainId, [digest], Ct)).Results);
 
         Assert.False(retried.IsPending);
         Assert.False(retried.AlreadyAnchored);
