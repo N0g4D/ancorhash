@@ -62,11 +62,11 @@ public sealed class RelayerConfig
 /// Configurazione multi-chain del relayer EVM.
 /// I network sono bindati dalla sezione "Blockchain:Networks" (chiave = chain id
 /// EIP-155). Il relayer firma con una chiave in Azure Key Vault
-/// (<see cref="Relayer"/>); solo per lo sviluppo locale contro anvil può firmare con
-/// una chiave privata in chiaro, Evm:RelayerPrivateKey, iniettata qui via
+/// (<see cref="Relayer"/>); solo nello sviluppo locale, con reti di test, può firmare
+/// con una chiave privata in chiaro, Evm:RelayerPrivateKey, iniettata qui via
 /// PostConfigure. Con ValidateOnStart l'app non parte se la configurazione è
-/// incompleta, o se la chiave in chiaro convive con una rete che non è una testnet
-/// (vedi <see cref="BlockchainOptionsValidator"/>).
+/// incompleta, o se la chiave in chiaro compare in Azure o insieme a una rete che non
+/// è una testnet (vedi <see cref="BlockchainOptionsValidator"/>).
 /// </summary>
 public sealed class BlockchainOptions
 {
@@ -101,9 +101,10 @@ public sealed class BlockchainOptions
     public RelayerConfig Relayer { get; init; } = new();
 
     /// <summary>
-    /// Chiave privata in chiaro del relayer, solo per lo sviluppo locale contro anvil
-    /// (variabile d'ambiente Evm__RelayerPrivateKey). Vuota quando firma Key Vault.
-    /// L'avvio fallisce se è impostata e una rete ha IsTestnet = false.
+    /// Chiave privata in chiaro del relayer, solo per lo sviluppo locale con reti di
+    /// test, come anvil o Sepolia con una chiave usa e getta (variabile d'ambiente
+    /// Evm__RelayerPrivateKey). Vuota quando firma Key Vault. L'avvio fallisce se è
+    /// impostata e l'app gira in Azure, o se una rete ha IsTestnet = false.
     /// </summary>
     [RegularExpression("^0x[0-9a-fA-F]{64}$",
         ErrorMessage = "Evm:RelayerPrivateKey deve essere di 66 caratteri: prefisso 0x + 64 hex digits.")]

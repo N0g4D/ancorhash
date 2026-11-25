@@ -19,7 +19,7 @@ public sealed class BlockchainOptionsValidatorTests
     private static readonly RelayerConfig KeyVaultKey = new() { KeyVaultUri = VaultUri, KeyName = KeyName };
     private static readonly RelayerConfig NoKeyVaultKey = new();
 
-    private readonly BlockchainOptionsValidator _validator = new();
+    private readonly BlockchainOptionsValidator _validator = new(runsLocally: true);
 
     [Fact]
     public void GlobalRegistryAddress_IsValidForEveryNetwork()
@@ -105,6 +105,7 @@ public sealed class BlockchainOptionsValidatorTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["AZURE_FUNCTIONS_ENVIRONMENT"] = "Development",
                 ["Evm:RelayerPrivateKey"] = PrivateKey,
                 ["Blockchain:RegistryAddress"] = Registry.ToLowerInvariant(),
                 ["Blockchain:Networks:11155111:RpcUrl"] = "https://sepolia.example.org",
@@ -136,6 +137,18 @@ public sealed class BlockchainOptionsValidatorTests
             Registry, new NetworkConfig { RpcUrl = "http://127.0.0.1:8545", IsTestnet = true }, NoKeyVaultKey, PrivateKey);
 
         Assert.True(_validator.Validate(null, options).Succeeded);
+    }
+
+    [Fact]
+    public void PrivateKey_FailsInAzure_EvenWhenEveryNetworkIsATestnet()
+    {
+        var options = Options(
+            Registry, new NetworkConfig { RpcUrl = "https://sepolia.example.org", IsTestnet = true }, NoKeyVaultKey, PrivateKey);
+
+        var failure = Assert.Single(new BlockchainOptionsValidator(runsLocally: false).Validate(null, options).Failures!);
+
+        Assert.StartsWith("Evm:RelayerPrivateKey è ammessa solo nello sviluppo locale", failure);
+        Assert.Contains("Blockchain:Relayer", failure);
     }
 
     [Fact]
@@ -209,6 +222,7 @@ public sealed class BlockchainOptionsValidatorTests
     {
         using var provider = BuildProvider(new Dictionary<string, string?>
         {
+            ["AZURE_FUNCTIONS_ENVIRONMENT"] = "Development",
             ["Evm:RelayerPrivateKey"] = PrivateKey,
             ["Blockchain:RegistryAddress"] = Registry,
             ["Blockchain:Networks:1:RpcUrl"] = "https://mainnet.example.org",
@@ -218,7 +232,40 @@ public sealed class BlockchainOptionsValidatorTests
         var ex = Assert.Throws<OptionsValidationException>(
             () => provider.GetRequiredService<IOptions<BlockchainOptions>>().Value);
 
-        Assert.Contains(ex.Failures, failure => failure.Contains("Evm:RelayerPrivateKey è ammessa solo"));
+        var failure = Assert.Single(ex.Failures);
+        Assert.StartsWith("Evm:RelayerPrivateKey è ammessa solo con reti di test", failure);
+    }
+
+    // Core Tools imposta Development in locale; in Azure la variabile manca, e allora
+    // l'ambiente è Production, oppure vale Production o Staging.
+    [Theory]
+    [InlineData("Development", true)]
+    [InlineData("development", true)]
+    [InlineData(null, false)]
+    [InlineData("Production", false)]
+    [InlineData("Staging", false)]
+    public void Startup_AcceptsThePrivateKeyOnlyInTheDevelopmentEnvironmentOfCoreTools(string? environment, bool accepted)
+    {
+        using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            ["AZURE_FUNCTIONS_ENVIRONMENT"] = environment,
+            ["Evm:RelayerPrivateKey"] = PrivateKey,
+            ["Blockchain:RegistryAddress"] = Registry,
+            ["Blockchain:Networks:11155111:RpcUrl"] = "https://sepolia.example.org",
+            ["Blockchain:Networks:11155111:IsTestnet"] = "true",
+        });
+
+        var options = () => provider.GetRequiredService<IOptions<BlockchainOptions>>().Value;
+
+        if (accepted)
+        {
+            Assert.Equal(PrivateKey, options().RelayerPrivateKey);
+        }
+        else
+        {
+            var failure = Assert.Single(Assert.Throws<OptionsValidationException>(options).Failures);
+            Assert.StartsWith("Evm:RelayerPrivateKey è ammessa solo nello sviluppo locale", failure);
+        }
     }
 
     [Fact]

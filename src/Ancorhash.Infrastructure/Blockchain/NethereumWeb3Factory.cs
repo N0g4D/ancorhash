@@ -18,7 +18,7 @@ namespace Ancorhash.Infrastructure.Blockchain;
 /// chiave non è soggetta a replay cross-chain.
 /// Con <c>relayerSigner</c> l'account è un ExternalAccount che chiede
 /// le firme al signer, cioè alla chiave in Azure Key Vault; senza, firma la chiave
-/// in chiaro Evm:RelayerPrivateKey, ammessa solo per lo sviluppo locale.
+/// in chiaro Evm:RelayerPrivateKey, ammessa solo nello sviluppo locale con reti di test.
 /// </summary>
 public sealed class NethereumWeb3Factory(
     IOptions<BlockchainOptions> options,

@@ -19,7 +19,7 @@ namespace Ancorhash.Infrastructure.Blockchain;
 
 /// <summary>
 /// Relayer EVM-agnostic su AncorhashRegistry. Il relayer è l'anchorer: firma con
-/// la sua chiave (in Azure Key Vault, o in chiaro solo per lo sviluppo locale),
+/// la sua chiave (in Azure Key Vault, o in chiaro solo nello sviluppo locale),
 /// paga il gas e i record sono intestati al suo indirizzo.
 /// Per ogni richiesta:
 /// <list type="number">

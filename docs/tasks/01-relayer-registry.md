@@ -129,7 +129,7 @@ on its own.
   There the organisation signs a single root with `anchorBySig`, so no batch
   signature is needed.
 - Document the Key Vault setup in the README:
-  `az keyvault key create --kty EC-HSM --curve SECP256K1 --ops sign verify`
+  `az keyvault key create --kty EC-HSM --curve P-256K --ops sign verify`
   (`EC` instead of `EC-HSM` on the standard tier), and the "Key Vault Crypto
   User" role for the Function App's managed identity.
 

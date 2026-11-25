@@ -23,7 +23,7 @@ builder.UseMiddleware<RateLimitingMiddleware>();
 // Sezione--Chiave diventa la chiave di configurazione Sezione:Chiave.
 // La chiave del relayer non è un segreto ma una chiave secp256k1 che firma senza
 // uscire dal vault (Blockchain:Relayer): un segreto Evm--RelayerPrivateKey non va
-// creato, e insieme a Blockchain:Relayer farebbe fallire l'avvio.
+// creato, e in Azure farebbe fallire l'avvio.
 // Auth via DefaultAzureCredential: Managed Identity in cloud, az login in locale.
 var keyVaultUri = builder.Configuration["KeyVault:Uri"];
 if (!string.IsNullOrWhiteSpace(keyVaultUri))

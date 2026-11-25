@@ -9,9 +9,14 @@ namespace Ancorhash.Infrastructure.Configuration;
 /// con un messaggio per ogni problema e la chiave di configurazione da correggere.
 /// Con ValidateOnStart l'app non parte se un network è incompleto, se un indirizzo
 /// del registry non è un indirizzo con checksum EIP-55, se manca la chiave del
-/// relayer o se una chiave privata in chiaro convive con una rete che non è una testnet.
+/// relayer, o se c'è una chiave privata in chiaro fuori dallo sviluppo locale o con
+/// una rete che non è una testnet.
 /// </summary>
-public sealed partial class BlockchainOptionsValidator : IValidateOptions<BlockchainOptions>
+/// <param name="runsLocally">
+/// True solo nello sviluppo locale con Core Tools (ambiente Development): in Azure
+/// la chiave in chiaro è rifiutata anche se tutte le reti sono testnet.
+/// </param>
+public sealed partial class BlockchainOptionsValidator(bool runsLocally) : IValidateOptions<BlockchainOptions>
 {
     private const string KeyVaultUriKey = "Blockchain:Relayer:KeyVaultUri";
     private const string KeyNameKey = "Blockchain:Relayer:KeyName";
@@ -66,10 +71,10 @@ public sealed partial class BlockchainOptionsValidator : IValidateOptions<Blockc
             : ValidateOptionsResult.Fail(failures);
     }
 
-    // Una sola chiave del relayer: quella in Key Vault oppure, solo con reti di test,
-    // quella in chiaro. Con entrambe non sarebbe chiaro a quale indirizzo vanno intestati
-    // i record.
-    private static void ValidateRelayerKey(BlockchainOptions options, List<string> failures)
+    // Una sola chiave del relayer: quella in Key Vault oppure, solo in locale e con reti
+    // di test, quella in chiaro. Con entrambe non sarebbe chiaro a quale indirizzo vanno
+    // intestati i record.
+    private void ValidateRelayerKey(BlockchainOptions options, List<string> failures)
     {
         var relayer = options.Relayer;
         var hasPrivateKey = !string.IsNullOrWhiteSpace(options.RelayerPrivateKey);
@@ -105,17 +110,27 @@ public sealed partial class BlockchainOptionsValidator : IValidateOptions<Blockc
         else if (!hasPrivateKey)
         {
             failures.Add(
-                $"Manca la chiave del relayer: impostare {KeyVaultUriKey} e {KeyNameKey} (chiave secp256k1 in Azure Key Vault), oppure {PrivateKeyKey} solo per lo sviluppo locale contro anvil.");
+                $"Manca la chiave del relayer: impostare {KeyVaultUriKey} e {KeyNameKey} (chiave secp256k1 in Azure Key Vault), oppure {PrivateKeyKey} solo nello sviluppo locale con reti di test.");
         }
 
-        // Una chiave in chiaro è ammessa solo dove il gas non vale niente.
-        if (hasPrivateKey)
+        if (!hasPrivateKey)
         {
-            foreach (var (chainId, _) in options.Networks.Where(network => !network.Value.IsTestnet))
-            {
-                failures.Add(
-                    $"{PrivateKeyKey} è ammessa solo per lo sviluppo locale contro anvil, ma Blockchain:Networks:{chainId} non è una testnet (IsTestnet = false): usare una chiave in Key Vault (Blockchain:Relayer).");
-            }
+            return;
+        }
+
+        // Una chiave in chiaro è ammessa solo sul computer di chi sviluppa, anche per
+        // una demo su testnet: in Azure firma sempre Key Vault.
+        if (!runsLocally)
+        {
+            failures.Add(
+                $"{PrivateKeyKey} è ammessa solo nello sviluppo locale con Core Tools (AZURE_FUNCTIONS_ENVIRONMENT = Development), non in Azure: usare una chiave in Key Vault (Blockchain:Relayer).");
+        }
+
+        // E solo dove il gas non vale niente.
+        foreach (var (chainId, _) in options.Networks.Where(network => !network.Value.IsTestnet))
+        {
+            failures.Add(
+                $"{PrivateKeyKey} è ammessa solo con reti di test, ma Blockchain:Networks:{chainId} non è una testnet (IsTestnet = false): usare una chiave in Key Vault (Blockchain:Relayer).");
         }
     }
 

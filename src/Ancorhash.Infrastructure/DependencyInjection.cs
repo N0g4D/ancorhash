@@ -17,11 +17,15 @@ namespace Ancorhash.Infrastructure;
 
 public static class DependencyInjection
 {
+    // Variabile con cui Azure Functions indica l'ambiente di esecuzione.
+    private const string FunctionsEnvironmentConfigKey = "AZURE_FUNCTIONS_ENVIRONMENT";
+
     /// <summary>
     /// Registra le implementazioni Infrastructure (Nethereum, Azure AI) e le
     /// configurazioni con validazione fail-fast all'avvio.
     /// Il relayer firma con la chiave in Azure Key Vault di Blockchain:Relayer;
-    /// Evm:RelayerPrivateKey, in chiaro, è ammessa solo con reti di test.
+    /// Evm:RelayerPrivateKey, in chiaro, è ammessa solo nello sviluppo locale e
+    /// solo con reti di test.
     /// </summary>
     public static IServiceCollection AddAncorhashInfrastructure(
         this IServiceCollection services,
@@ -37,9 +41,14 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
         // Network, RPC URL, indirizzi del registry (checksum EIP-55), explorer e
-        // chiave del relayer.
+        // chiave del relayer. Lo sviluppo locale si riconosce dall'ambiente Development:
+        // Core Tools lo imposta in locale e local.settings.json non può cambiarlo; in
+        // Azure, senza AZURE_FUNCTIONS_ENVIRONMENT, l'ambiente è Production su ogni
+        // piano, Flex Consumption compreso.
+        var runsLocally = string.Equals(
+            configuration[FunctionsEnvironmentConfigKey], "Development", StringComparison.OrdinalIgnoreCase);
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IValidateOptions<BlockchainOptions>, BlockchainOptionsValidator>());
+            ServiceDescriptor.Singleton<IValidateOptions<BlockchainOptions>>(new BlockchainOptionsValidator(runsLocally)));
 
         services.AddOptions<DocumentIntelligenceOptions>()
             .Bind(configuration.GetSection(DocumentIntelligenceOptions.SectionName))
@@ -88,9 +97,20 @@ public static class DependencyInjection
     private static AzureKeyVaultExternalSigner? CreateRelayerSigner(IServiceProvider provider)
     {
         var relayer = provider.GetRequiredService<IOptions<BlockchainOptions>>().Value.Relayer;
-        return relayer.UsesKeyVault
-            ? new AzureKeyVaultExternalSigner(
-                relayer.KeyName!, relayer.KeyVaultUri!, provider.GetRequiredService<TokenCredential>())
-            : null;
+        if (!relayer.UsesKeyVault)
+        {
+            return null;
+        }
+
+        return new AzureKeyVaultExternalSigner(
+            relayer.KeyName!, relayer.KeyVaultUri!, provider.GetRequiredService<TokenCredential>())
+        {
+            // ES256K invece del default di Nethereum, ECDSA256. Oggi az crea le chiavi
+            // secp256k1 solo con la curva P-256K, e Key Vault abbina P-256K all'algoritmo
+            // ES256K. ECDSA256 è il nome legacy che andava con il vecchio nome di curva
+            // SECP256K1: con una chiave P-256K rischia l'errore "Key and signing
+            // algorithm are incompatible".
+            UseLegacyECDSA256 = false,
+        };
     }
 }

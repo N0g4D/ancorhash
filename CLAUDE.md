@@ -40,7 +40,8 @@ holds the output can check it later without trusting Ancorhash.
    (`ValidateOnStart`).
 4. No private keys in app settings or Key Vault secrets in the cloud: signing
    keys are non-exportable secp256k1 keys in Azure Key Vault. A raw private key
-   is allowed only for local development against anvil.
+   is allowed only in local development, and only when every configured network
+   is a test network: the API refuses to start otherwise.
 5. Anchoring is idempotent end to end: a digest that is already anchored is a
    success that returns the original time, never an error.
 6. The `ethrome-2026` branch is frozen. Never merge it, and bring code over

@@ -123,7 +123,7 @@ Create a `local.settings.json` file with standard RPC URLs, the address of `Anco
   }
 }
 ~~~
-For local development against anvil, `Evm__RelayerPrivateKey` can take the place of the two `Blockchain__Relayer__*` settings with a raw key, such as one of anvil's accounts. The API refuses to start if it is set together with them, or while any network has `IsTestnet` false.
+For local development on test networks, such as anvil or Sepolia with a throwaway key, `Evm__RelayerPrivateKey` can take the place of the two `Blockchain__Relayer__*` settings. The API refuses to start with it in Azure, next to the Key Vault settings, or while any network has `IsTestnet` false. It tells local from Azure by the `Development` environment, which Core Tools sets in `AZURE_FUNCTIONS_ENVIRONMENT` and `local.settings.json` cannot change; in Azure the environment is `Production` unless that setting says otherwise, so never set it to `Development` there.
 
 Run the backend:
 ~~~bash
@@ -161,9 +161,9 @@ The relayer pays the gas and is the anchorer of every record. In the cloud it ho
 1. Create the key:
    ~~~bash
    az keyvault key create --vault-name <vault> --name ancorhash-relayer \
-     --kty EC-HSM --curve SECP256K1 --ops sign verify
+     --kty EC-HSM --curve P-256K --ops sign verify
    ~~~
-   `EC-HSM` keys are protected by an HSM and need the Premium tier; on the Standard tier use `--kty EC`.
+   `P-256K` is Azure's name for secp256k1, and the relayer signs with the matching algorithm, `ES256K`. `EC-HSM` keys are protected by an HSM and need the Premium tier; on the Standard tier use `--kty EC`.
 
 2. Give the Function App's managed identity the **Key Vault Crypto User** role on the key, which lets it read the public key and sign. The vault must use the Azure RBAC permission model:
    ~~~bash
@@ -174,7 +174,7 @@ The relayer pays the gas and is the anchorer of every record. In the cloud it ho
    ~~~
    With a user-assigned identity, also set `AZURE_CLIENT_ID` to its client ID, so that `DefaultAzureCredential` picks it.
 
-3. In the Function App settings, set `Blockchain__Relayer__KeyVaultUri` to `https://<vault>.vault.azure.net/` and `Blockchain__Relayer__KeyName` to `ancorhash-relayer`. Leave out `Evm__RelayerPrivateKey`, both as an app setting and as an `Evm--RelayerPrivateKey` secret in the vault that `KeyVault__Uri` loads: the API refuses to start with a raw key next to the Key Vault key.
+3. In the Function App settings, set `Blockchain__Relayer__KeyVaultUri` to `https://<vault>.vault.azure.net/` and `Blockchain__Relayer__KeyName` to `ancorhash-relayer`. Leave out `Evm__RelayerPrivateKey`, both as an app setting and as an `Evm--RelayerPrivateKey` secret in the vault that `KeyVault__Uri` loads: the API refuses to start with a raw key in Azure.
 
 4. Fund the relayer's address on each network. The API logs it the first time it uses a network; to read it from the key beforehand (needs `python3` and Foundry's `cast`):
    ~~~bash
