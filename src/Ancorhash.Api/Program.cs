@@ -19,9 +19,11 @@ builder.ConfigureFunctionsWebApplication();
 // Anti-draining: rate limiting per IP su /notarize, prima di ogni function.
 builder.UseMiddleware<RateLimitingMiddleware>();
 
-// Azure Key Vault come configuration provider: il segreto Evm--RelayerPrivateKey
-// diventa la chiave Evm:RelayerPrivateKey e popola BlockchainOptions.RelayerPrivateKey.
-// In locale (KeyVault:Uri assente) la stessa chiave arriva da Evm__RelayerPrivateKey.
+// Azure Key Vault come configuration provider per i segreti dell'app: il segreto
+// Sezione--Chiave diventa la chiave di configurazione Sezione:Chiave.
+// La chiave del relayer non è un segreto ma una chiave secp256k1 che firma senza
+// uscire dal vault (Blockchain:Relayer): un segreto Evm--RelayerPrivateKey non va
+// creato, e insieme a Blockchain:Relayer farebbe fallire l'avvio.
 // Auth via DefaultAzureCredential: Managed Identity in cloud, az login in locale.
 var keyVaultUri = builder.Configuration["KeyVault:Uri"];
 if (!string.IsNullOrWhiteSpace(keyVaultUri))

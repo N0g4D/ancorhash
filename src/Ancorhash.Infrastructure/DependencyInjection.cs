@@ -9,7 +9,9 @@ using Azure.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Nethereum.Signer.AzureKeyVault;
 
 namespace Ancorhash.Infrastructure;
 
@@ -18,8 +20,8 @@ public static class DependencyInjection
     /// <summary>
     /// Registra le implementazioni Infrastructure (Nethereum, Azure AI) e le
     /// configurazioni con validazione fail-fast all'avvio.
-    /// La master key del relayer è letta da Evm:RelayerPrivateKey
-    /// (Key Vault in cloud, variabile d'ambiente in locale).
+    /// Il relayer firma con la chiave in Azure Key Vault di Blockchain:Relayer;
+    /// Evm:RelayerPrivateKey, in chiaro, è ammessa solo con reti di test.
     /// </summary>
     public static IServiceCollection AddAncorhashInfrastructure(
         this IServiceCollection services,
@@ -34,7 +36,8 @@ public static class DependencyInjection
                 configuration[BlockchainOptions.RelayerPrivateKeyConfigKey] ?? string.Empty)
             .ValidateDataAnnotations()
             .ValidateOnStart();
-        // Network, RPC URL, indirizzi del registry (checksum EIP-55) ed explorer.
+        // Network, RPC URL, indirizzi del registry (checksum EIP-55), explorer e
+        // chiave del relayer.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<BlockchainOptions>, BlockchainOptionsValidator>());
 
@@ -64,12 +67,30 @@ public static class DependencyInjection
         });
         services.AddSingleton<IPriceOracleService, CoinGeckoPriceOracleService>();
 
-        services.AddSingleton<IWeb3Factory, NethereumWeb3Factory>();
+        services.AddSingleton<IWeb3Factory>(provider => new NethereumWeb3Factory(
+            provider.GetRequiredService<IOptions<BlockchainOptions>>(),
+            CreateRelayerSigner(provider),
+            provider.GetRequiredService<ILogger<NethereumWeb3Factory>>()));
         services.TryAddSingleton(TimeProvider.System);
         // Singleton: le transazioni pending valgono per tutta l'istanza.
         services.AddSingleton<PendingAnchorings>();
         services.AddSingleton<IBlockchainRelayer, NethereumBlockchainRelayer>();
         services.AddSingleton<IDocumentExtractionService, AzureDocumentExtractionService>();
         return services;
+    }
+
+    /// <summary>
+    /// Signer della chiave del relayer in Azure Key Vault, uno per processo e
+    /// condiviso dalle chain. Null senza Blockchain:Relayer: allora il relayer firma
+    /// con Evm:RelayerPrivateKey. La validazione all'avvio garantisce che ci sia
+    /// esattamente una delle due.
+    /// </summary>
+    private static AzureKeyVaultExternalSigner? CreateRelayerSigner(IServiceProvider provider)
+    {
+        var relayer = provider.GetRequiredService<IOptions<BlockchainOptions>>().Value.Relayer;
+        return relayer.UsesKeyVault
+            ? new AzureKeyVaultExternalSigner(
+                relayer.KeyName!, relayer.KeyVaultUri!, provider.GetRequiredService<TokenCredential>())
+            : null;
     }
 }
