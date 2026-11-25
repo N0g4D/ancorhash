@@ -4,6 +4,10 @@ on:
   push:
     paths:
       - "src/**"
+      # Not used by the backend tests: docs, deployment records, front end.
+      - "!src/**/*.md"
+      - "!src/Ancorhash.Contracts/broadcast/**"
+      - "!src/Ancorhash.Web/**"
       - "tests/**"
       - "Ancorhash.slnx"
       - ".github/workflows/backend.yml"
@@ -17,11 +21,11 @@ jobs:
     steps:
       # The integration tests deploy the registry with forge script, which needs
       # the contract libraries in src/Ancorhash.Contracts/lib.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
 

@@ -66,7 +66,20 @@ public sealed class PendingAnchoringTests(AnvilFixture anvil)
     {
         SkipWithoutAnvil();
         var clock = new ManualTimeProvider();
-        var relayer = anvil.CreateRelayer(receiptTimeoutSeconds: 1, pendingAnchorings: new PendingAnchorings(clock));
+
+        // Un solo relayer per tutto il test, perché conta anche il nonce dopo lo scarto:
+        // deve rileggerlo dal nodo lo stesso relayer che ha mandato la transazione,
+        // invece di usare un contatore tenuto in memoria, nel relayer o nel suo account.
+        // Un relayer nuovo partirebbe comunque dal nonce del nodo, e un contatore del
+        // genere passerebbe inosservato. Il timeout della receipt è di 3 secondi: il
+        // primo invio aspetta comunque tutto il timeout e torna pending, perché anvil
+        // non mina, quindi un timeout più lungo allungherebbe solo il test. Nell'ultimo
+        // invio, con l'automine, anvil mina il blocco in modo asincrono e la prima
+        // lettura della receipt può arrivare prima del blocco e tornare null; con 3
+        // secondi le letture sono tre, a 0, 1 e 2 secondi, e il ritardo del blocco non
+        // basta più a lasciare il digest pending. Con 1 secondo la lettura sarebbe una
+        // sola: il timeout annullerebbe l'attesa prima della seconda.
+        var relayer = anvil.CreateRelayer(receiptTimeoutSeconds: 3, pendingAnchorings: new PendingAnchorings(clock));
         var digest = RandomDigest();
         var nonceBefore = await anvil.GetNonceAsync(anvil.RelayerAddress);
 
