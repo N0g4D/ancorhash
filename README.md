@@ -1,106 +1,154 @@
 # Ancorhash
 
-**Enterprise Web3 Document Notarization platform. Zero Data Leakage, Gas-Sponsored, Fiat-Ready.**
+[![backend](https://github.com/N0g4D/ancorhash/actions/workflows/backend.yml/badge.svg?branch=main)](https://github.com/N0g4D/ancorhash/actions/workflows/backend.yml)
+[![contracts](https://github.com/N0g4D/ancorhash/actions/workflows/contracts.yml/badge.svg?branch=main)](https://github.com/N0g4D/ancorhash/actions/workflows/contracts.yml)
+[![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![React](https://img.shields.io/badge/React-18.2-61DAFB?logo=react&logoColor=black)](https://reactjs.org/)
-[![Ethereum](https://img.shields.io/badge/Ethereum-3C3C3D?logo=ethereum&logoColor=white)](https://ethereum.org)
-[![Azure AI](https://img.shields.io/badge/Azure%20AI-0078D4?logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/en-us/products/ai-services/ai-document-intelligence)
+**Proof of what an automated process produced, and when.**
 
----
+Bots, RPA flows and AI agents produce documents, reports and decisions that
+someone may need to check months later. Ancorhash records a fingerprint of
+each output on a public blockchain when the output is produced. Anyone who
+holds the output can later prove that it existed at that time and has not
+changed since, without trusting Ancorhash, the operator of the bot or its
+logs.
 
-## What is Ancorhash?
+> **Status: early.** The registry runs on Ethereum Sepolia at
+> [`0x929673BD5629c84453aA1d2d733aA31836E62fCE`](https://sepolia.etherscan.io/address/0x929673BD5629c84453aA1d2d733aA31836E62fCE#code),
+> with its source verified on Etherscan. The code has not been audited: do not
+> rely on it on mainnet yet.
 
-Ancorhash is a B2B SaaS platform designed to bring cryptographic proof of existence and data integrity to the Enterprise world (Banks, Healthcare, Public Administration) without the compliance and UX hurdles typical of Web3 applications.
+## Why
 
-Ancorhash allows users to timestamp and notarize documents on EVM-compatible blockchains (Ethereum, Polygon) providing mathematical certainty that a document existed at a specific time and has not been altered since. 
+The audit trail of an automated process usually lives in logs kept by
+whoever runs the process. When a regulator, an auditor or a counterparty
+questions an output, those logs are the operator's word. A record on a public
+chain is a time that nobody, Ancorhash included, can change or delete
+afterwards. And the output itself never leaves the company: only its SHA-256
+digest does.
 
-### The Enterprise Differentiators
-1. **Zero Data Leakage:** Due to GDPR and corporate compliance, sensitive documents (contracts, medical records) cannot be uploaded to third-party cloud services. Ancorhash computes the SHA-256 cryptographic hash of the file **locally inside the user's browser**. Only the 32-byte hash is sent to the backend. The document never leaves the user's device.
-2. **Gas-Sponsored Relayer:** Corporate clients cannot manage crypto wallets, private keys, or hold volatile cryptocurrencies on their balance sheets. Ancorhash uses a Relayer architecture: the backend signs and pays for the blockchain transaction (Gas) on behalf of the user.
-3. **Fiat Billing (Stripe-Ready):** Users pay a predictable, standard fiat fee (e.g., in USD/EUR) via credit card for the service. The backend orchestrates a real-time decentralized pricing oracle to calculate the gas cost and applies a fixed service markup.
+## How it works
 
----
+1. The bot computes the SHA-256 of an output where it runs: in a script, in
+   the browser, or in a Power Automate Desktop flow with *Hash from file*.
+2. It sends the digest, never the file, to the Ancorhash API.
+3. Ancorhash records the digest on `AncorhashRegistry`, a contract with no
+   owner and no upgrade path, and returns a receipt: the time of the record,
+   the transaction and the address it is recorded under.
+4. To verify, anyone recomputes the SHA-256 of the output and reads
+   `anchoredAt(digest, anchorer)` on the registry: in Etherscan's Read
+   Contract, or with [`tools/verify_receipt.py`](tools/verify_receipt.py),
+   which needs nothing but Python.
 
-## System Architecture
+A digest that is already recorded keeps its first time, so a bot can always
+retry safely.
 
-The V2 architecture separates the local hashing and intelligence layer from the Web3 transactional layer, ensuring complete data privacy.
-
-~~~mermaid
-graph LR
-    USER["User"] -->|"Drags PDF"| BROWSER["<b>React Frontend</b><br/><i>Local Hashing</i>"]
-    
-    BROWSER -.->|"Opt-in OCR"| AZURE["<b>Azure AI</b><br/><i>Extraction</i>"]
-    BROWSER -->|"1. Check Costs"| API["<b>.NET 10 Backend</b><br/><i>Relayer Engine</i>"]
-    BROWSER -->|"2. Fiat Checkout"| STRIPE["<b>Stripe</b><br/><i>Billing Mock</i>"]
-    BROWSER -->|"3. POST /notarize"| API
-
-    API -->|"Fetch USD Price"| ORACLE["<b>CoinGecko</b><br/><i>Oracle</i>"]
-    API -->|"Simulate & Broadcast"| ETH["<b>Blockchain</b><br/><i>EVM Node</i>"]
-
-    style BROWSER fill:#20232a,stroke:#61dafb,color:#fff
-    style API fill:#512bd4,stroke:#512bd4,color:#fff
-    style ETH fill:#3C3C3D,stroke:#627EEA,color:#fff
-    style AZURE fill:#0078D4,stroke:#0078D4,color:#fff
-    style STRIPE fill:#635bff,stroke:#635bff,color:#fff
-~~~
-
-### The Notarization Flow (Sequence)
-
-~~~mermaid
+```mermaid
 sequenceDiagram
-    participant B as React Frontend
-    participant A as .NET Backend API
-    participant O as CoinGecko Oracle
-    participant R as EVM Blockchain Node
-    
-    B->>B: Computes SHA-256 locally (Zero Data Leakage)
-    B->>A: GET /api/v1/chains (Request pricing)
-    A->>O: Fetch MATIC/ETH USD price
-    A->>R: Estimate Gas Limit & Price
-    A-->>B: Returns supported chains & dynamic USD costs
-    B->>B: Displays Checkout Mock (Gas Cost + Service Fee)
-    B->>A: POST /api/v1/notarize (Hash, Turnstile Token, ChainId)
-    A->>A: Validate Anti-bot & IP Rate Limit
-    A->>R: anchoredAt(digest, relayer) on AncorhashRegistry
-    A->>R: anchorBatch(new digests), EIP-1559 (skipped if already anchored)
-    R-->>A: Receipt with Anchored events
-    A-->>B: Receipt: anchored_at, tx_hash, explorer_url
-~~~
+    participant Bot as Bot or RPA flow
+    participant API as Ancorhash API
+    participant KV as Azure Key Vault
+    participant Reg as AncorhashRegistry
+    participant Ver as Anyone, later
+    Bot->>Bot: SHA-256 of the output
+    Bot->>API: the digest
+    API->>Reg: already recorded?
+    API->>KV: sign the transaction
+    API->>Reg: record the digest
+    API-->>Bot: receipt: time, transaction, anchorer
+    Ver->>Ver: SHA-256 of the output
+    Ver->>Reg: anchoredAt(digest, anchorer)
+    Reg-->>Ver: the time of the record
+```
 
----
+The API pays the gas from its own relayer account, which signs with a
+secp256k1 key in Azure Key Vault that never leaves the vault. The people who
+run the bots need no wallet and no cryptocurrency.
 
-## Technology Stack
+A record proves that a digest existed, in that exact form, no later than the
+time of its block, and that the address it is recorded under authorised it.
+It does not prove that the output is correct, or who is behind the address.
+See [what a record proves, and what it does not](src/Ancorhash.Contracts/README.md#what-a-record-proves-and-what-it-does-not).
 
-### Backend (`src/Ancorhash.Api` / `Core` / `Infrastructure`)
-Built with **C# .NET 10 (Isolated Azure Functions)** for maximum scalability and serverless execution.
-- **Blockchain:** `Nethereum` for RPC interactions and EIP-1559 transaction building.
-- **Security:** `Cloudflare Turnstile` server-side validation and custom IP-based `RateLimitingMiddleware` using `IMemoryCache` to prevent wallet draining.
-- **Pricing Oracle:** Real-time fiat conversion via `CoinGecko` API, heavily cached and designed to fail-soft (fallback to $0) in case of rate limits.
-- **Observability:** `OpenTelemetry` configured for Enterprise-grade logging.
+## Verify it yourself
 
-### Frontend (`src/Ancorhash.Web`)
-Built with **React, TypeScript, Vite, and Tailwind CSS**.
-- **Local Hashing:** Fast, memory-safe client-side SHA-256 generation using `crypto.subtle`.
-- **UI/UX:** Minimalist, monochromatic design optimized for B2B dashboards. Includes a Mock Checkout interface for live product demonstrations.
-- **Anti-bot:** `@marsidev/react-turnstile` integrated seamlessly into the submission flow.
+This repository holds a sample output of a bot,
+[`docs/examples/reconciliation.csv`](docs/examples/reconciliation.csv), and
+the [receipt](docs/examples/reconciliation.receipt.json) the API returned when
+its digest was recorded on Sepolia. To check it you need Python 3.9 or later
+and nothing else:
 
----
+```bash
+python3 tools/verify_receipt.py docs/examples/reconciliation.receipt.json \
+  --file docs/examples/reconciliation.csv \
+  --rpc https://ethereum-sepolia-rpc.publicnode.com
+```
 
-## Local Development Setup
+```text
+digest: matches the receipt
+chain: recorded at 2026-11-26T22:58:00+00:00 under 0xA2642Fb7fd209B3d7b875A2B88e2b3BF8d32EA7B
+OK
+```
+
+The script computes the SHA-256 of the file and reads the record from the
+registry through the RPC endpoint you choose: it never contacts Ancorhash.
+Change one byte of the file and the check fails.
+
+## Built for the Microsoft stack
+
+Ancorhash is meant to run in the Azure tenant of the organisation that runs
+the bots: the API on Azure Functions, the keys in Azure Key Vault, and Power
+Automate as the first client.
+
+## Roadmap
+
+- [x] `AncorhashRegistry` on Ethereum Sepolia, with verified source
+- [x] Idempotent anchoring through the registry
+- [x] Relayer key in Azure Key Vault
+- [ ] A public demo, separate from the API keys for integrations
+- [ ] Runs: many outputs in one record, with a receipt for each output
+- [ ] A page to verify a file and its receipt
+- [ ] A Power Automate Desktop subflow
+- [ ] A Power Platform custom connector
+- [ ] Mainnet
+
+## Repository
+
+| Path | What |
+|---|---|
+| `src/Ancorhash.Contracts` | `AncorhashRegistry` in Solidity, with Foundry tests and deployment |
+| `src/Ancorhash.Core`, `Infrastructure`, `Api` | The API: .NET 10, Azure Functions (isolated worker), Nethereum |
+| `src/Ancorhash.Web` | The demo web app: React, TypeScript, Vite |
+| `tests/Ancorhash.Tests` | Unit tests, and integration tests against anvil |
+| `tools/verify_receipt.py` | A receipt verifier that needs only Python |
+| `docs/examples` | A sample output and its receipt, to try the verifier |
+| `docs/tasks` | Planned work, one file per task |
+
+## Author
+
+Built by [Alessio Malerba](https://alessiomalerba.it), Power Platform solution
+architect and Solidity developer. I am looking for a first pilot: if you run
+bots or agents whose outputs someone else has to trust, write to me on
+[LinkedIn](https://www.linkedin.com/in/alessiomalerba-tech/).
+
+## License
+
+Apache License 2.0: see [LICENSE](LICENSE).
+
+## Local development setup
 
 ### Prerequisites
 - Node.js 20+
 - .NET 10 SDK
 - Azure Functions Core Tools (`func`)
 
-### 1. Backend Setup
+### 1. Backend setup
 Navigate to the API project and restore dependencies:
 ~~~bash
 cd src/Ancorhash.Api
 dotnet restore
 ~~~
-Create a `local.settings.json` file with standard RPC URLs, the address of `AncorhashRegistry` and the relayer key. The registry has the same address on every chain: `script/DeployRegistry.s.sol` prints it (see `src/Ancorhash.Contracts/README.md`), and the API refuses to start without a checksummed address. The relayer signs with a secp256k1 key in Azure Key Vault (see [Relayer Key in Azure Key Vault](#relayer-key-in-azure-key-vault)): locally, `DefaultAzureCredential` uses your `az login`, and your account needs the same role on the key as the Function App:
+Create a `local.settings.json` file with standard RPC URLs, the address of `AncorhashRegistry` and the relayer key. The registry has the same address on every chain: `script/DeployRegistry.s.sol` prints it (see `src/Ancorhash.Contracts/README.md`), and the API refuses to start without a checksummed address. The relayer signs with a secp256k1 key in Azure Key Vault (see [Relayer key in Azure Key Vault](#relayer-key-in-azure-key-vault)): locally, `DefaultAzureCredential` uses your `az login`, and your account needs the same role on the key as the Function App:
 ~~~json
 {
   "IsEncrypted": false,
@@ -130,7 +178,7 @@ Run the backend:
 dotnet run
 ~~~
 
-### 2. Frontend Setup
+### 2. Frontend setup
 In a new terminal, navigate to the Web project:
 ~~~bash
 cd src/Ancorhash.Web
@@ -154,9 +202,11 @@ The integration tests start `anvil` on a free port and deploy the registry with 
 
 ---
 
-## Relayer Key in Azure Key Vault
+## Relayer key in Azure Key Vault
 
 The relayer pays the gas and is the anchorer of every record. In the cloud it holds no private key: it signs with a non-exportable secp256k1 key in Azure Key Vault, and the private key never leaves the vault.
+
+On a new subscription, register the Key Vault resource provider first: `az provider register --namespace Microsoft.KeyVault`. Some regions, such as West Europe, may not accept new resources from new subscriptions: pick another one, and keep the vault and the Function App in the same region.
 
 1. Create the key:
    ~~~bash
@@ -218,7 +268,7 @@ Anyone can verify a receipt without trusting Ancorhash: `anchoredAt(digest, anch
 
 ---
 
-## Security & Protections
+## Security & protections
 
 Since Ancorhash pays the transaction fees, the `/api/v1/notarize` endpoint is a highly critical surface. It is protected by a multi-layered defense strategy:
 1. **IP Rate Limiting:** Discards requests aggressively at the middleware layer if an IP exceeds the allowed threshold (HTTP 429), saving CPU and API calls.
@@ -227,10 +277,6 @@ Since Ancorhash pays the transaction fees, the `/api/v1/notarize` endpoint is a 
 
 ---
 
-## Historical Note: The V1 PoC
-Ancorhash originally started as a Python and FastAPI project (`azure-web3-notarizer`). That initial proof-of-concept acted as a pure API-first middleware. However, it relied on downloading the actual PDF payload to the server for processing. To meet stringent Enterprise data privacy requirements, the architecture was entirely reimagined and rewritten in .NET and React (V2) to achieve true Zero Data Leakage.
+## Historical note
 
----
-<p align="center">
-  <b>Ancorhash</b> — Trust through Cryptography.
-</p>
+Ancorhash started as a Python and FastAPI proof of concept, preserved under the [`python-poc`](https://github.com/N0g4D/ancorhash/tree/python-poc) tag.

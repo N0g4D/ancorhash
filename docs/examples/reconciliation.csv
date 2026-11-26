@@ -1,0 +1,4 @@
+invoice_id,amount_eur,status,checked_at
+INV-001,1250.00,matched,2026-11-26T09:00:03Z
+INV-002,89.90,matched,2026-11-26T09:00:04Z
+INV-003,430.15,exception,2026-11-26T09:00:06Z
