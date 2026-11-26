@@ -9,11 +9,12 @@ namespace Ancorhash.Infrastructure.Blockchain;
 public interface IWeb3Factory
 {
     /// <summary>
-    /// Restituisce il client Web3 per il chain id richiesto, firmato con la
-    /// master key del relayer sull'RPC configurato per quel network.
+    /// Restituisce il client Web3 per il chain id richiesto, con l'account del
+    /// relayer sull'RPC configurato per quel network. La prima chiamata per chain
+    /// inizializza l'account: con la chiave in Key Vault ne legge la chiave pubblica.
     /// </summary>
     /// <exception cref="Ancorhash.Core.Exceptions.UnsupportedChainException">
     /// Chain id assente dalla configurazione.
     /// </exception>
-    IWeb3 GetWeb3(int chainId);
+    Task<IWeb3> GetWeb3Async(int chainId, CancellationToken cancellationToken = default);
 }

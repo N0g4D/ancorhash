@@ -19,7 +19,8 @@ namespace Ancorhash.Infrastructure.Blockchain;
 
 /// <summary>
 /// Relayer EVM-agnostic su AncorhashRegistry. Il relayer è l'anchorer: firma con
-/// la sua master key, paga il gas e i record sono intestati al suo indirizzo.
+/// la sua chiave (in Azure Key Vault, o in chiaro solo nello sviluppo locale),
+/// paga il gas e i record sono intestati al suo indirizzo.
 /// Per ogni richiesta:
 /// <list type="number">
 /// <item>legge anchoredAt(digest, relayer) per ogni digest distinto: un valore
@@ -73,7 +74,7 @@ public sealed class NethereumBlockchainRelayer(
         }
 
         var registry = _options.GetRegistryAddress(chainId);
-        var web3 = web3Factory.GetWeb3(chainId);
+        var web3 = await web3Factory.GetWeb3Async(chainId, cancellationToken).ConfigureAwait(false);
         var anchorer = web3.TransactionManager.Account.Address;
 
         await EnsureRegistryDeployedAsync(web3, chainId, registry, cancellationToken).ConfigureAwait(false);
@@ -211,7 +212,7 @@ public sealed class NethereumBlockchainRelayer(
         }
 
         var registry = _options.GetRegistryAddress(chainId);
-        var web3 = web3Factory.GetWeb3(chainId);
+        var web3 = await web3Factory.GetWeb3Async(chainId, cancellationToken).ConfigureAwait(false);
         await EnsureRegistryDeployedAsync(web3, chainId, registry, cancellationToken).ConfigureAwait(false);
 
         // Chiamata rappresentativa: anchor(bytes32) con un digest casuale, quindi mai
@@ -365,7 +366,9 @@ public sealed class NethereumBlockchainRelayer(
                     // memoria: dopo una transazione scartata dalla mempool il contatore
                     // resterebbe avanti, e ogni invio successivo finirebbe in coda dietro
                     // un nonce mancante. Il lock evita che due invii di questa istanza
-                    // leggano lo stesso nonce.
+                    // leggano lo stesso nonce. Con il nonce nel messaggio Nethereum non usa
+                    // il suo InMemoryNonceService, né con Account né con ExternalAccount
+                    // (Key Vault).
                     var nonce = await web3.Eth.Transactions.GetTransactionCount
                         .SendRequestAsync(sender, BlockParameter.CreatePending())
                         .ConfigureAwait(false);

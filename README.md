@@ -100,14 +100,15 @@ Navigate to the API project and restore dependencies:
 cd src/Ancorhash.Api
 dotnet restore
 ~~~
-Create a `local.settings.json` file. Ensure you configure a valid Relayer Private Key (with funds on the selected networks), standard RPC URLs and the address of `AncorhashRegistry`. The registry has the same address on every chain: `script/DeployRegistry.s.sol` prints it (see `src/Ancorhash.Contracts/README.md`), and the API refuses to start without a checksummed address:
+Create a `local.settings.json` file with standard RPC URLs, the address of `AncorhashRegistry` and the relayer key. The registry has the same address on every chain: `script/DeployRegistry.s.sol` prints it (see `src/Ancorhash.Contracts/README.md`), and the API refuses to start without a checksummed address. The relayer signs with a secp256k1 key in Azure Key Vault (see [Relayer Key in Azure Key Vault](#relayer-key-in-azure-key-vault)): locally, `DefaultAzureCredential` uses your `az login`, and your account needs the same role on the key as the Function App:
 ~~~json
 {
   "IsEncrypted": false,
   "Values": {
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
     "Logging__LogLevel__Default": "Information",
-    "Evm__RelayerPrivateKey": "0xYOUR_PRIVATE_KEY",
+    "Blockchain__Relayer__KeyVaultUri": "https://YOUR-VAULT.vault.azure.net/",
+    "Blockchain__Relayer__KeyName": "ancorhash-relayer",
     "Turnstile__SecretKey": "1x0000000000000000000000000000000AA",
     "Blockchain__RegistryAddress": "0xYOUR_REGISTRY_ADDRESS",
     "Blockchain__Networks__11155111__RpcUrl": "https://sepolia.infura.io/v3/...",
@@ -122,6 +123,8 @@ Create a `local.settings.json` file. Ensure you configure a valid Relayer Privat
   }
 }
 ~~~
+For local development on test networks, such as anvil or Sepolia with a throwaway key, `Evm__RelayerPrivateKey` can take the place of the two `Blockchain__Relayer__*` settings. The API refuses to start with it in Azure, next to the Key Vault settings, or while any network has `IsTestnet` false. It tells local from Azure by the `Development` environment, which Core Tools sets in `AZURE_FUNCTIONS_ENVIRONMENT` and `local.settings.json` cannot change; in Azure the environment is `Production` unless that setting says otherwise, so never set it to `Development` there.
+
 Run the backend:
 ~~~bash
 dotnet run
@@ -147,7 +150,40 @@ Open `http://localhost:5173` in your browser.
 ~~~bash
 dotnet test Ancorhash.slnx
 ~~~
-The integration tests start `anvil` on a free port and deploy the registry with `forge script`. They are marked `Category=Integration` and skipped when `anvil` or `forge` is not on the `PATH`; `dotnet test --filter "Category!=Integration"` leaves them out explicitly.
+The integration tests start `anvil` on a free port and deploy the registry with `forge script`. The relayer signs either with a raw key or through `ExternalAccount`, the account used with Key Vault, with a local key in place of the vault. They are marked `Category=Integration` and skipped when `anvil` or `forge` is not on the `PATH`; `dotnet test --filter "Category!=Integration"` leaves them out explicitly.
+
+---
+
+## Relayer Key in Azure Key Vault
+
+The relayer pays the gas and is the anchorer of every record. In the cloud it holds no private key: it signs with a non-exportable secp256k1 key in Azure Key Vault, and the private key never leaves the vault.
+
+1. Create the key:
+   ~~~bash
+   az keyvault key create --vault-name <vault> --name ancorhash-relayer \
+     --kty EC-HSM --curve P-256K --ops sign verify
+   ~~~
+   `P-256K` is Azure's name for secp256k1, and the relayer signs with the matching algorithm, `ES256K`. `EC-HSM` keys are protected by an HSM and need the Premium tier; on the Standard tier use `--kty EC`.
+
+2. Give the Function App's managed identity the **Key Vault Crypto User** role on the key, which lets it read the public key and sign. The vault must use the Azure RBAC permission model:
+   ~~~bash
+   az role assignment create --role "Key Vault Crypto User" \
+     --assignee-object-id "$(az functionapp identity show --name <function-app> --resource-group <rg> --query principalId -o tsv)" \
+     --assignee-principal-type ServicePrincipal \
+     --scope "$(az keyvault show --name <vault> --query id -o tsv)/keys/ancorhash-relayer"
+   ~~~
+   With a user-assigned identity, also set `AZURE_CLIENT_ID` to its client ID, so that `DefaultAzureCredential` picks it.
+
+3. In the Function App settings, set `Blockchain__Relayer__KeyVaultUri` to `https://<vault>.vault.azure.net/` and `Blockchain__Relayer__KeyName` to `ancorhash-relayer`. Leave out `Evm__RelayerPrivateKey`, both as an app setting and as an `Evm--RelayerPrivateKey` secret in the vault that `KeyVault__Uri` loads: the API refuses to start with a raw key in Azure.
+
+4. Fund the relayer's address on each network. The API logs it the first time it uses a network; to read it from the key beforehand (needs `python3` and Foundry's `cast`):
+   ~~~bash
+   PUBKEY=$(az keyvault key show --vault-name <vault> --name ancorhash-relayer --query key -o json \
+     | python3 -c 'import base64, json, sys; k = json.load(sys.stdin); d = lambda v: base64.urlsafe_b64decode(v + "=" * (-len(v) % 4)); print("0x" + (d(k["x"]) + d(k["y"])).hex())')
+   cast to-check-sum-address "0x$(cast keccak "$PUBKEY" | cut -c 27-)"
+   ~~~
+
+Do not create new versions of the key. The relayer always signs with the current version, and each version is a different key pair, so a different relayer address: receipts already issued stay verifiable under the old address, but a digest sent again would be anchored again under the new one, with a new time.
 
 ---
 

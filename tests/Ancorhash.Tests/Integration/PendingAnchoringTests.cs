@@ -61,8 +61,10 @@ public sealed class PendingAnchoringTests(AnvilFixture anvil)
         Assert.Equal(nonceBefore + 1, await anvil.GetNonceAsync(anvil.RelayerAddress));
     }
 
-    [Fact]
-    public async Task TransactionDroppedFromTheMempool_BlocksTheDigestOnlyUntilItsEntryExpires()
+    [Theory]
+    [InlineData(RelayerAccount.LocalKey)]
+    [InlineData(RelayerAccount.ExternalSigner)]
+    public async Task TransactionDroppedFromTheMempool_BlocksTheDigestOnlyUntilItsEntryExpires(RelayerAccount account)
     {
         SkipWithoutAnvil();
         var clock = new ManualTimeProvider();
@@ -71,17 +73,21 @@ public sealed class PendingAnchoringTests(AnvilFixture anvil)
         // deve rileggerlo dal nodo lo stesso relayer che ha mandato la transazione,
         // invece di usare un contatore tenuto in memoria, nel relayer o nel suo account.
         // Un relayer nuovo partirebbe comunque dal nonce del nodo, e un contatore del
-        // genere passerebbe inosservato. Il timeout della receipt è di 3 secondi: il
-        // primo invio aspetta comunque tutto il timeout e torna pending, perché anvil
-        // non mina, quindi un timeout più lungo allungherebbe solo il test. Nell'ultimo
-        // invio, con l'automine, anvil mina il blocco in modo asincrono e la prima
-        // lettura della receipt può arrivare prima del blocco e tornare null; con 3
-        // secondi le letture sono tre, a 0, 1 e 2 secondi, e il ritardo del blocco non
-        // basta più a lasciare il digest pending. Con 1 secondo la lettura sarebbe una
-        // sola: il timeout annullerebbe l'attesa prima della seconda.
-        var relayer = anvil.CreateRelayer(receiptTimeoutSeconds: 3, pendingAnchorings: new PendingAnchorings(clock));
+        // genere passerebbe inosservato. Nethereum ne tiene uno sia per Account sia per
+        // ExternalAccount, l'account usato con Key Vault: il test gira con entrambi.
+        // Il timeout della receipt è di 3 secondi: il primo invio aspetta comunque
+        // tutto il timeout e torna pending, perché anvil non mina, quindi un timeout
+        // più lungo allungherebbe solo il test. Nell'ultimo invio, con l'automine,
+        // anvil mina il blocco in modo asincrono e la prima lettura della receipt può
+        // arrivare prima del blocco e tornare null; con 3 secondi le letture sono tre,
+        // a 0, 1 e 2 secondi, e il ritardo del blocco non basta più a lasciare il
+        // digest pending. Con 1 secondo la lettura sarebbe una sola: il timeout
+        // annullerebbe l'attesa prima della seconda.
+        var relayer = anvil.CreateRelayer(
+            receiptTimeoutSeconds: 3, pendingAnchorings: new PendingAnchorings(clock), account: account);
+        var relayerAddress = anvil.AddressOf(account);
         var digest = RandomDigest();
-        var nonceBefore = await anvil.GetNonceAsync(anvil.RelayerAddress);
+        var nonceBefore = await anvil.GetNonceAsync(relayerAddress);
 
         AnchoringResult pending, stillPending;
         await anvil.SetAutomineAsync(false);
@@ -112,9 +118,9 @@ public sealed class PendingAnchoringTests(AnvilFixture anvil)
         Assert.False(retried.IsPending);
         Assert.False(retried.AlreadyAnchored);
         Assert.Equal(
-            await anvil.GetAnchoredAtAsync(digest, anvil.RelayerAddress),
+            await anvil.GetAnchoredAtAsync(digest, relayerAddress),
             retried.AnchoredAt!.Value.ToUnixTimeSeconds());
-        Assert.Equal(nonceBefore + 1, await anvil.GetNonceAsync(anvil.RelayerAddress));
+        Assert.Equal(nonceBefore + 1, await anvil.GetNonceAsync(relayerAddress));
     }
 
     private void SkipWithoutAnvil() =>

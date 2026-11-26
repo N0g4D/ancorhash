@@ -29,6 +29,16 @@ public sealed class AnvilCollection : ICollectionFixture<AnvilFixture>
     public const string Name = "Anvil";
 }
 
+/// <summary>L'account con cui firma il relayer nei test.</summary>
+public enum RelayerAccount
+{
+    /// <summary>Account di Nethereum con la chiave in chiaro, come nello sviluppo locale.</summary>
+    LocalKey,
+
+    /// <summary>ExternalAccount, come con Azure Key Vault, con una chiave locale al posto del vault.</summary>
+    ExternalSigner,
+}
+
 /// <summary>
 /// Un anvil su una porta libera, con AncorhashRegistry deployato da
 /// script/DeployRegistry.s.sol con l'account 0, come si fa su una rete vera.
@@ -43,6 +53,10 @@ public sealed partial class AnvilFixture : IAsyncLifetime
     public const string DeployerPrivateKey = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
     public const string RelayerPrivateKey = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
 
+    // La chiave dietro l'ExternalAccount (account 2) è diversa da quella del relayer
+    // locale: un record intestato all'indirizzo sbagliato non passerebbe inosservato.
+    public const string ExternalSignerPrivateKey = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
+
     private static readonly TimeSpan DeployTimeout = TimeSpan.FromMinutes(3);
 
     private readonly StringBuilder _anvilOutput = new();
@@ -56,6 +70,8 @@ public sealed partial class AnvilFixture : IAsyncLifetime
     public string RegistryAddress { get; private set; } = string.Empty;
 
     public string RelayerAddress { get; } = new Account(RelayerPrivateKey).Address;
+
+    public string ExternalSignerAddress { get; } = new Account(ExternalSignerPrivateKey).Address;
 
     /// <summary>Client senza account, per letture e comandi di anvil.</summary>
     public IWeb3 Web3 { get; private set; } = null!;
@@ -95,19 +111,30 @@ public sealed partial class AnvilFixture : IAsyncLifetime
         _anvil.Dispose();
     }
 
-    /// <summary>Relayer reale (Nethereum) sull'anvil, con la chiave dell'account 1.</summary>
+    /// <summary>Indirizzo a cui sono intestati i record del relayer con questo account.</summary>
+    public string AddressOf(RelayerAccount account) =>
+        account == RelayerAccount.ExternalSigner ? ExternalSignerAddress : RelayerAddress;
+
+    /// <summary>
+    /// Relayer reale (Nethereum) sull'anvil: con <see cref="RelayerAccount.LocalKey"/>
+    /// firma la chiave in chiaro dell'account 1, con <see cref="RelayerAccount.ExternalSigner"/>
+    /// un ExternalAccount con la chiave dell'account 2, come farebbe Key Vault.
+    /// </summary>
     public NethereumBlockchainRelayer CreateRelayer(
         int receiptTimeoutSeconds = 30,
         string? registryAddress = null,
         bool isTestnet = true,
         IPriceOracleService? priceOracle = null,
-        PendingAnchorings? pendingAnchorings = null)
+        PendingAnchorings? pendingAnchorings = null,
+        RelayerAccount account = RelayerAccount.LocalKey)
     {
+        var external = account == RelayerAccount.ExternalSigner;
         var options = Options.Create(new BlockchainOptions
         {
             RegistryAddress = registryAddress ?? RegistryAddress,
             ReceiptTimeoutSeconds = receiptTimeoutSeconds,
-            RelayerPrivateKey = RelayerPrivateKey,
+            // Con il signer esterno nessuna chiave in chiaro, come in cloud.
+            RelayerPrivateKey = external ? string.Empty : RelayerPrivateKey,
             Networks =
             {
                 [ChainId] = new NetworkConfig
@@ -121,7 +148,10 @@ public sealed partial class AnvilFixture : IAsyncLifetime
         });
 
         return new NethereumBlockchainRelayer(
-            new NethereumWeb3Factory(options, NullLogger<NethereumWeb3Factory>.Instance),
+            new NethereumWeb3Factory(
+                options,
+                external ? new LocalKeyExternalSigner(ExternalSignerPrivateKey) : null,
+                NullLogger<NethereumWeb3Factory>.Instance),
             priceOracle ?? new FixedPriceOracle(null),
             pendingAnchorings ?? new PendingAnchorings(TimeProvider.System),
             options,

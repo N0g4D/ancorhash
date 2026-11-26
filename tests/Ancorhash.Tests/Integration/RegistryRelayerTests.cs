@@ -44,6 +44,30 @@ public sealed class RegistryRelayerTests(AnvilFixture anvil)
     }
 
     [Fact]
+    public async Task ExternalAccountWithALocalKeyInPlaceOfKeyVault_AnchorsTheDigestUnderThatKeysAddress()
+    {
+        SkipWithoutAnvil();
+        var relayer = anvil.CreateRelayer(account: RelayerAccount.ExternalSigner);
+        var digest = RandomDigest();
+
+        var outcome = await relayer.AnchorAsync(ChainId, [digest], Ct);
+
+        Assert.Equal(anvil.ExternalSignerAddress, outcome.AnchorerAddress);
+        var result = Assert.Single(outcome.Results);
+        Assert.False(result.AlreadyAnchored);
+        Assert.False(result.IsPending);
+        Assert.Equal(
+            await anvil.GetAnchoredAtAsync(digest, anvil.ExternalSignerAddress),
+            result.AnchoredAt!.Value.ToUnixTimeSeconds());
+        Assert.Equal(0, await anvil.GetAnchoredAtAsync(digest, anvil.RelayerAddress));
+
+        // Firmata dalla chiave dietro l'ExternalAccount, in EIP-1559 come con la chiave locale.
+        var transaction = await anvil.Web3.Eth.Transactions.GetTransactionByHash.SendRequestAsync(result.TransactionHash);
+        Assert.Equal(anvil.ExternalSignerAddress, transaction.From, ignoreCase: true);
+        Assert.Equal(2, (int)transaction.Type.Value);
+    }
+
+    [Fact]
     public async Task SameDigestAgain_IsAlreadyAnchoredWithTheOriginalTime_AndTheRelayerNonceDoesNotChange()
     {
         SkipWithoutAnvil();
@@ -168,7 +192,9 @@ public sealed class RegistryRelayerTests(AnvilFixture anvil)
     {
         SkipWithoutAnvil();
         const decimal usdPerEth = 1000m;
-        var relayer = anvil.CreateRelayer(isTestnet: false, priceOracle: new FixedPriceOracle(usdPerEth));
+        // Una rete che non è una testnet vuole la chiave in Key Vault: qui l'ExternalAccount.
+        var relayer = anvil.CreateRelayer(
+            isTestnet: false, priceOracle: new FixedPriceOracle(usdPerEth), account: RelayerAccount.ExternalSigner);
 
         var costUsd = await relayer.EstimateFiatCostAsync(ChainId, Ct);
         var gasPrice = (await anvil.Web3.Eth.GasPrice.SendRequestAsync()).Value;
