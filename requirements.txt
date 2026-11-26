@@ -1,8 +1,0 @@
-fastapi
-uvicorn[standard]
-pydantic-settings
-python-json-logger
-httpx
-tenacity
-web3
-azure-ai-documentintelligence

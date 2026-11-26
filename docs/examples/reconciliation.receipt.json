@@ -1,0 +1,13 @@
+{
+    "status": "success",
+    "document_id": "reconciliation.csv",
+    "digest": "0xc192097aec2e34394b364b18dbab3d49c8eeeb1e3c075c0d2065dafe926c4a46",
+    "chain_id": 11155111,
+    "registry": "0x929673BD5629c84453aA1d2d733aA31836E62fCE",
+    "anchorer": "0xA2642Fb7fd209B3d7b875A2B88e2b3BF8d32EA7B",
+    "anchored_at": "2026-11-26T22:58:00Z",
+    "anchored_at_unix": 1795733880,
+    "tx_hash": "0x7548b1e8f5e938c206e0f9066c63b5647c3e904348c999402305ebb26abdcb34",
+    "already_anchored": false,
+    "explorer_url": "https://sepolia.etherscan.io/tx/0x7548b1e8f5e938c206e0f9066c63b5647c3e904348c999402305ebb26abdcb34"
+}
