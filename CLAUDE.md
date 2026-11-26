@@ -18,7 +18,11 @@ holds the output can check it later without trusting Ancorhash.
 - `src/Ancorhash.Web/`: React, TypeScript, Vite front end.
 - `docs/tasks/`: planned work, one file per task. Implement a task only when
   asked to.
-- `legacy_python/`: the original FastAPI proof of concept. Do not change it.
+- `docs/examples/`: a sample output and the receipt of its digest on Sepolia,
+  used by "Verify it yourself" in the README. Do not change them: one changed
+  byte breaks the check.
+- `tools/`: `verify_receipt.py`, a receipt verifier that needs only Python 3.9
+  or later.
 
 ## Commands
 
